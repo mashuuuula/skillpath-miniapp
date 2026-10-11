@@ -1,515 +1,671 @@
 
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import "./App.css";
 
-type Lesson = {
-  title: string;
-  description: string;
-  task: string;
-  reward: number;
+type Screen = "home" | "lesson" | "game" | "chat" | "profile";
+
+type Question = {
+  question: string;
+  options: string[];
+  answer: number;
+  explanation: string;
 };
 
-type LearningPlan = {
-  goal: string;
-  level: string;
-  lessons: Lesson[];
-};
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
-
-const defaultLessons: Lesson[] = [
+const defaultQuestions: Question[] = [
   {
-    title: "Разведка",
-    description: "Разберись в основах своей новой цели и пойми, что уже знаешь.",
-    task: "Объясни своими словами, чему хочешь научиться и зачем.",
-    reward: 20,
+    question: "Зачем нужно практиковаться после изучения новой темы?",
+    options: [
+      "Чтобы быстрее забыть материал",
+      "Чтобы проверить понимание и закрепить знания",
+      "Чтобы пропустить следующий урок",
+      "Практика вообще не нужна",
+    ],
+    answer: 1,
+    explanation:
+      "Практика помогает проверить, понял ли ты материал, и научиться применять его самостоятельно.",
   },
   {
-    title: "Первый навык",
-    description: "Освой один небольшой элемент, который приблизит тебя к результату.",
-    task: "Попробуй применить новое знание на простом примере.",
-    reward: 30,
-  },
-  {
-    title: "Практика",
-    description: "Переходи от теории к самостоятельному действию.",
-    task: "Выполни небольшое практическое задание и оцени результат.",
-    reward: 40,
-  },
-  {
-    title: "Проверка уровня",
-    description: "Проверь, что получилось, найди ошибки и выбери следующий шаг.",
-    task: "Расскажи, что получилось, а что пока вызывает трудности.",
-    reward: 50,
+    question: "Что лучше сделать, если ты допустил ошибку?",
+    options: [
+      "Бросить обучение",
+      "Всегда угадывать ответы",
+      "Разобраться, почему ответ неверный",
+      "Пропустить все сложные темы",
+    ],
+    answer: 2,
+    explanation:
+      "Ошибки — часть обучения. Когда ты понимаешь причину ошибки, ты действительно учишься.",
   },
 ];
 
-const examples = [
-  "Научиться играть на гитаре",
-  "Освоить Python с нуля",
-  "Подтянуть английский",
-  "Научиться кататься на скейте",
-  "Разобраться в математике",
-];
+const initialMessage =
+  "Привет! 👋 Я твой персональный ИИ-репетитор SkillPath AI. Напиши, чему ты хочешь научиться, а я помогу составить маршрут обучения.";
 
-function makePlan(goal: string): LearningPlan {
-  return {
-    goal,
-    level: "Начинающий",
-    lessons: defaultLessons.map((lesson, index) => ({
-      ...lesson,
-      title: [
-        "Знакомство с целью",
-        "Первые основы",
-        "Практическая миссия",
-        "Проверка результата",
-      ][index],
-    })),
-  };
-}
+async function askAI(
+  messages: { role: string; content: string }[],
+  goal: string,
+  mode: string
+): Promise<string> {
+  const response = await fetch("/.netlify/functions/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages, goal, mode }),
+  });
 
-function App() {
-  const [goal, setGoal] = useState("");
-  const [mode, setMode] = useState<"learner" | "parent">("learner");
-  const [plan, setPlan] = useState<LearningPlan | null>(null);
-  const [activeLesson, setActiveLesson] = useState(0);
-  const [completed, setCompleted] = useState<number[]>([]);
-  const [xp, setXp] = useState(0);
-  const [message, setMessage] = useState("");
-  const [chat, setChat] = useState<string[]>([]);
-  const [history, setHistory] = useState<ChatMessage[]>([]);
-  const [isSending, setIsSending] = useState(false);
-  const [showExamples, setShowExamples] = useState(true);
+  const data = await response.json();
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("skillpath-progress");
-
-      if (saved) {
-        const data = JSON.parse(saved);
-        setXp(data.xp ?? 0);
-        setCompleted(data.completed ?? []);
-        setGoal(data.goal ?? "");
-        setMode(data.mode ?? "learner");
-      }
-    } catch {
-      // Если сохранённых данных нет, начинаем с чистого профиля.
-    }
-
-    const telegram = window as Window & {
-      Telegram?: {
-        WebApp?: {
-          ready?: () => void;
-          expand?: () => void;
-        };
-      };
-    };
-
-    telegram.Telegram?.WebApp?.ready?.();
-    telegram.Telegram?.WebApp?.expand?.();
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(
-      "skillpath-progress",
-      JSON.stringify({ xp, completed, goal, mode }),
-    );
-  }, [xp, completed, goal, mode]);
-
-  function startLearning(value = goal) {
-    const cleanGoal = value.trim();
-    if (!cleanGoal) return;
-
-    setGoal(cleanGoal);
-    setPlan(makePlan(cleanGoal));
-    setActiveLesson(0);
-    setHistory([]);
-    setChat([
-      `Моя цель: ${cleanGoal}`,
-      "Привет! Я твой AI-напарник SkillPath. Напиши, что хочешь узнать или с чем нужна помощь. Я объясню всё простыми шагами.",
-    ]);
-    setShowExamples(false);
+  if (!response.ok) {
+    throw new Error(data.error || "Не удалось получить ответ ИИ");
   }
 
-  function finishLesson() {
-    if (!plan || completed.includes(activeLesson)) return;
+  if (typeof data.reply !== "string" || !data.reply.trim()) {
+    throw new Error("ИИ вернул пустой ответ");
+  }
 
-    const nextCompleted = [...completed, activeLesson];
-    setCompleted(nextCompleted);
-    setXp((current) => current + plan.lessons[activeLesson].reward);
+  return data.reply;
+}
 
-    if (activeLesson < plan.lessons.length - 1) {
-      setActiveLesson(activeLesson + 1);
+export default function App() {
+  const [screen, setScreen] = useState<Screen>("home");
+  const [goal, setGoal] = useState("");
+  const [track, setTrack] = useState("ИИ и код");
+  const [lesson, setLesson] = useState("");
+  const [lessonTitle, setLessonTitle] = useState("Твоя первая миссия");
+  const [questions, setQuestions] =
+    useState<Question[]>(defaultQuestions);
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [gameFinished, setGameFinished] = useState(false);
+  const [xp, setXp] = useState(0);
+  const [completedLessons, setCompletedLessons] = useState(0);
+  const [hint, setHint] = useState("");
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState<
+    { role: string; content: string }[]
+  >([{ role: "assistant", content: initialMessage }]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function startLearning() {
+    if (!goal.trim() || loading) return;
+
+    setLoading(true);
+    setError("");
+    setScreen("lesson");
+    setLesson("");
+
+    const prompt = `
+Ты — доброжелательный персональный ИИ-репетитор для начинающего.
+Цель ученика: ${goal}.
+Направление: ${track}.
+
+Составь начало персонального обучения.
+1. Поздоровайся и поддержи ученика.
+2. Назови первую конкретную тему.
+3. Объясни её простыми словами, короткими абзацами.
+4. Покажи понятный пример.
+5. Дай небольшое задание, которое ученик сможет выполнить.
+6. Не переходи к сложным темам, пока ученик не освоил основы.
+7. В конце предложи нажать кнопку для интерактивной игровой практики.
+
+Не выдумывай, что ученик уже знает материал. Пиши понятно и дружелюбно.
+`;
+
+    try {
+      const reply = await askAI(
+        [{ role: "user", content: prompt }],
+        goal,
+        "lesson"
+      );
+
+      setLesson(reply);
+
+      const firstLine = reply
+        .split("\n")
+        .map((line) => line.trim())
+        .find((line) => line.length > 0);
+
+      setLessonTitle(
+        firstLine?.replace(/^#+\s*/, "").slice(0, 70) ||
+          "Твой первый урок"
+      );
+
+      setChatMessages([
+        { role: "assistant", content: initialMessage },
+        { role: "user", content: `Я хочу научиться: ${goal}` },
+        { role: "assistant", content: reply },
+      ]);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Не удалось загрузить урок. Попробуй ещё раз."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function startGame() {
+    setScreen("game");
+    setQuestionIndex(0);
+    setSelectedAnswer(null);
+    setChecked(false);
+    setGameFinished(false);
+    setHint("");
+    setError("");
+
+    if (!goal.trim() || !lesson) return;
+
+    setLoading(true);
+
+    const prompt = `
+Ты создаёшь интерактивную учебную игру для начинающего.
+Цель ученика: ${goal}.
+Изученный материал:
+${lesson}
+
+Составь ровно 4 вопроса для закрепления именно этого материала.
+Каждый вопрос должен иметь 4 варианта ответа и один правильный ответ.
+Включи краткое объяснение правильного ответа.
+
+Верни только корректный JSON без Markdown и без текста вокруг:
+{
+  "questions": [
+    {
+      "question": "Текст вопроса",
+      "options": ["Вариант A", "Вариант B", "Вариант C", "Вариант D"],
+      "answer": 0,
+      "explanation": "Объяснение"
+    }
+  ]
+}
+
+answer — номер правильного варианта, начиная с 0.
+Не создавай вопросы по материалу, который ещё не объяснялся.
+`;
+
+    try {
+      const reply = await askAI(
+        [{ role: "user", content: prompt }],
+        goal,
+        "game"
+      );
+
+      const cleaned = reply
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
+
+      const parsed = JSON.parse(cleaned);
+      const generated = parsed.questions;
+
+      if (
+        !Array.isArray(generated) ||
+        generated.length === 0 ||
+        !generated.every(
+          (q: Question) =>
+            typeof q.question === "string" &&
+            Array.isArray(q.options) &&
+            q.options.length >= 2 &&
+            Number.isInteger(q.answer) &&
+            q.answer >= 0 &&
+            q.answer < q.options.length &&
+            typeof q.explanation === "string"
+        )
+      ) {
+        throw new Error("ИИ создал вопросы в неожиданном формате");
+      }
+
+      setQuestions(generated);
+    } catch {
+      setQuestions(defaultQuestions);
+      setError(
+        "Не удалось создать игру по уроку. Пока доступна тренировочная миссия."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function checkAnswer() {
+    if (selectedAnswer === null || checked) return;
+
+    setChecked(true);
+
+    if (selectedAnswer === questions[questionIndex].answer) {
+      setXp((current) => current + 10);
+    }
+  }
+
+  function nextQuestion() {
+    if (questionIndex < questions.length - 1) {
+      setQuestionIndex((current) => current + 1);
+      setSelectedAnswer(null);
+      setChecked(false);
+      setHint("");
+    } else {
+      setGameFinished(true);
+      setCompletedLessons((current) => current + 1);
+      setXp((current) => current + 20);
     }
   }
 
   async function sendMessage() {
-    const clean = message.trim();
+    const text = chatInput.trim();
+    if (!text || loading) return;
 
-    if (!clean || isSending) return;
-
-    const nextHistory: ChatMessage[] = [
-      ...history,
-      { role: "user", content: clean },
+    const nextHistory = [
+      ...chatMessages,
+      { role: "user", content: text },
     ];
 
-    setMessage("");
-    setIsSending(true);
-    setChat((current) => [...current, `Ты: ${clean}`]);
-    setHistory(nextHistory);
+    setChatMessages(nextHistory);
+    setChatInput("");
+    setLoading(true);
+    setError("");
 
     try {
-      const response = await fetch("/.netlify/functions/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: nextHistory,
-          goal: goal,
-          mode: mode,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          typeof data.error === "string"
-            ? data.error
-            : `Ошибка сервера: ${response.status}`,
-        );
-      }
-
-      if (typeof data.reply !== "string" || !data.reply.trim()) {
-        throw new Error("ИИ вернул пустой ответ. Попробуй ещё раз.");
-      }
-
-      const reply = data.reply.trim();
-
-      setHistory([
+      const reply = await askAI(nextHistory, goal, "tutor");
+      setChatMessages([
         ...nextHistory,
         { role: "assistant", content: reply },
       ]);
-
-      setChat((current) => [
-        ...current,
-        `ИИ-напарник: ${reply}`,
-      ]);
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "Неизвестная ошибка подключения";
-
-      setChat((current) => [
-        ...current,
-        `Не удалось получить ответ: ${errorMessage}. Проверь подключение и попробуй ещё раз.`,
-      ]);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Сообщение не отправилось. Попробуй ещё раз."
+      );
     } finally {
-      setIsSending(false);
+      setLoading(false);
     }
   }
 
-  const level = Math.floor(xp / 100) + 1;
-
-  const progress = plan
-    ? Math.round((completed.length / plan.lessons.length) * 100)
-    : 0;
+  const currentQuestion = questions[questionIndex];
 
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <button className="brand" onClick={() => setPlan(null)}>
+    <div className="app">
+      <header className="app-header">
+        <button className="brand" onClick={() => setScreen("home")}>
           <span className="brand-icon">✦</span>
           <span>
             <strong>SkillPath</strong>
-            <small>AI LEARNING COMPANION</small>
+            <small>AI TUTOR</small>
           </span>
         </button>
 
-        <div className="level-pill">
-          <span>⚡</span> {xp} XP
-        </div>
+        <div className="xp-badge">⚡ {xp} XP</div>
       </header>
 
-      <section className="hero">
-        <div className="eyebrow">
-          <span className="live-dot" />
-          ТВОЙ ПУТЬ НАЧИНАЕТСЯ ЗДЕСЬ
-        </div>
+      <main className="app-main">
+        {screen === "home" && (
+          <section className="panel hero">
+            <span className="eyebrow">ТВОЙ ЛИЧНЫЙ ИИ-РЕПЕТИТОР</span>
+            <h1>
+              Учись своему.
+              <br />
+              <span>В своём темпе.</span>
+            </h1>
+            <p>
+              Ставь цель, изучай темы с ИИ и закрепляй знания в
+              интерактивных играх.
+            </p>
 
-        <h1>
-          Учись чему угодно.
-          <br />
-          <span>Становись кем угодно.</span>
-        </h1>
+            <h3>Чему хочешь научиться?</h3>
 
-        <p className="hero-text">
-          Твоя цель — твои правила. От школьных предметов до новых навыков
-          и больших мечтаний.
-        </p>
+            <div className="track-grid">
+              {["ИИ и код", "Языки", "Школа"].map((item) => (
+                <button
+                  key={item}
+                  className={`track-button ${
+                    track === item ? "selected" : ""
+                  }`}
+                  onClick={() => setTrack(item)}
+                >
+                  {item === "ИИ и код"
+                    ? "🤖"
+                    : item === "Языки"
+                      ? "🌍"
+                      : "📚"}
+                  <span>{item}</span>
+                </button>
+              ))}
+            </div>
 
-        <div className="mode-switch">
-          <button
-            className={mode === "learner" ? "mode active" : "mode"}
-            onClick={() => setMode("learner")}
-          >
-            🚀 Я хочу учиться
-          </button>
-
-          <button
-            className={mode === "parent" ? "mode active" : "mode"}
-            onClick={() => setMode("parent")}
-          >
-            💜 Я родитель
-          </button>
-        </div>
-      </section>
-
-      {!plan ? (
-        <section className="goal-card">
-          <div className="section-kicker">01 / ТВОЯ МИССИЯ</div>
-
-          <h2>
-            {mode === "parent"
-              ? "Чему нужно научиться вашему ребёнку?"
-              : "Что ты хочешь освоить?"}
-          </h2>
-
-          <p className="muted">
-            Не нужно выбирать из готового списка. Просто напиши свою цель.
-          </p>
-
-          <form
-            className="goal-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              startLearning();
-            }}
-          >
+            <label className="field-label" htmlFor="goal">
+              Твоя цель
+            </label>
             <textarea
+              id="goal"
               value={goal}
-              onChange={(event) => setGoal(event.target.value)}
-              placeholder={
-                mode === "parent"
-                  ? "Например: помочь ребёнку 10 лет понять дроби..."
-                  : "Например: хочу научиться играть на гитаре..."
-              }
+              onChange={(e) => setGoal(e.target.value)}
+              placeholder="Например: хочу научиться Python с нуля и создавать ИИ-агентов..."
               rows={3}
             />
 
-            <button className="primary-button" type="submit">
-              Создать мой путь <span>↗</span>
-            </button>
-          </form>
-
-          {showExamples && (
-            <div className="examples">
-              <span className="muted small">ИЛИ ПОПРОБУЙ:</span>
-
-              <div className="example-list">
-                {examples.map((example) => (
-                  <button
-                    className="example-chip"
-                    key={example}
-                    onClick={() => {
-                      setGoal(example);
-                      startLearning(example);
-                    }}
-                  >
-                    {example} <span>↗</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="promise-row">
-            <span>✦ Любой навык</span>
-            <span>✦ Свой темп</span>
-            <span>✦ Практика без скуки</span>
-          </div>
-        </section>
-      ) : (
-        <>
-          <section className="plan-card">
-            <button className="back-button" onClick={() => setPlan(null)}>
-              ← Изменить цель
-            </button>
-
-            <div className="section-kicker">ТВОЙ УЧЕБНЫЙ МАРШРУТ</div>
-
-            <h2>{plan.goal}</h2>
-
-            <div className="plan-meta">
-              <span>🌱 {plan.level}</span>
-              <span>🎯 {plan.lessons.length} этапа</span>
-              <span>⚡ Уровень {level}</span>
-            </div>
-
-            <div className="progress-heading">
-              <span>Прогресс миссии</span>
-              <strong>{progress}%</strong>
-            </div>
-
-            <div className="progress-track">
-              <div
-                className="progress-fill"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-
-            <div className="lesson-list">
-              {plan.lessons.map((lesson, index) => {
-                const isDone = completed.includes(index);
-                const isActive = activeLesson === index;
-
-                return (
-                  <button
-                    className={`lesson-item ${isActive ? "selected" : ""} ${
-                      isDone ? "done" : ""
-                    }`}
-                    key={lesson.title}
-                    onClick={() => setActiveLesson(index)}
-                  >
-                    <span className="lesson-number">
-                      {isDone ? "✓" : `0${index + 1}`}
-                    </span>
-
-                    <span className="lesson-copy">
-                      <strong>{lesson.title}</strong>
-                      <small>{lesson.description}</small>
-                    </span>
-
-                    <span className="lesson-xp">+{lesson.reward} XP</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="mission-card">
-            <div className="mission-topline">
-              <span className="mission-icon">✧</span>
-              <span className="section-kicker">АКТИВНОЕ ЗАДАНИЕ</span>
-              <span className="mission-xp">
-                +{plan.lessons[activeLesson].reward} XP
-              </span>
-            </div>
-
-            <h2>{plan.lessons[activeLesson].title}</h2>
-
-            <p>{plan.lessons[activeLesson].description}</p>
-
-            <div className="task-box">
-              <span>ТВОЁ ЗАДАНИЕ</span>
-              <p>{plan.lessons[activeLesson].task}</p>
-            </div>
-
             <button
               className="primary-button"
-              onClick={finishLesson}
-              disabled={completed.includes(activeLesson)}
+              onClick={startLearning}
+              disabled={!goal.trim() || loading}
             >
-              {completed.includes(activeLesson)
-                ? "✓ Этап завершён"
-                : "Завершить этап"}
-              <span>↗</span>
+              {loading ? "Готовим обучение..." : "Создать мой маршрут →"}
             </button>
 
-            {progress === 100 && (
-              <p className="success-message">
-                🎉 Все этапы пройдены! Теперь можно создать новую цель.
-              </p>
+            <div className="feature-row">
+              <span>🎯 Личный план</span>
+              <span>🎮 Игровая практика</span>
+              <span>✨ Поддержка ИИ</span>
+            </div>
+          </section>
+        )}
+
+        {screen === "lesson" && (
+          <section className="panel">
+            <button
+              className="back-button"
+              onClick={() => setScreen("home")}
+            >
+              ← На главную
+            </button>
+
+            <span className="eyebrow">ТВОЙ УРОК</span>
+            <h1>{lessonTitle}</h1>
+
+            {loading && !lesson && (
+              <p>ИИ готовит твой первый урок… ✨</p>
+            )}
+
+            {lesson && (
+              <div className="lesson-content">{lesson}</div>
+            )}
+
+            {lesson && (
+              <div className="lesson-actions">
+                <button
+                  className="primary-button"
+                  onClick={startGame}
+                  disabled={loading}
+                >
+                  {loading ? "Создаём игру..." : "🎮 Перейти к игре"}
+                </button>
+                <button
+                  className="secondary-button"
+                  onClick={() => setScreen("chat")}
+                >
+                  💬 Задать вопрос ИИ
+                </button>
+              </div>
             )}
           </section>
+        )}
 
-          <section className="mentor-card">
-            <div className="mentor-header">
-              <div className="mentor-avatar">✦</div>
-              <div>
-                <h3>Твой AI-напарник</h3>
-                <p>Задай вопрос или расскажи о трудностях</p>
+        {screen === "game" && (
+          <section className="panel game-panel">
+            <button
+              className="back-button"
+              onClick={() => setScreen("lesson")}
+            >
+              ← Вернуться к уроку
+            </button>
+
+            <span className="eyebrow">ИНТЕРАКТИВНАЯ МИССИЯ</span>
+
+            {loading && <p>ИИ придумывает задания по твоему уроку…</p>}
+
+            {!loading && gameFinished && (
+              <div className="result-screen">
+                <div className="result-icon">🏆</div>
+                <h1>Миссия пройдена!</h1>
+                <p>
+                  Ты завершил тренировку. Продолжай — новые знания
+                  складываются из маленьких побед.
+                </p>
+                <button
+                  className="primary-button"
+                  onClick={() => setScreen("profile")}
+                >
+                  Посмотреть прогресс →
+                </button>
+                <button
+                  className="secondary-button"
+                  onClick={() => setScreen("lesson")}
+                >
+                  Вернуться к уроку
+                </button>
               </div>
-            </div>
+            )}
 
-            <div className="chat-messages" aria-live="polite">
-              {chat.map((item, index) => (
-                <div className="chat-line" key={`${index}-${item}`}>
-                  {item}
+            {!loading && !gameFinished && currentQuestion && (
+              <>
+                <div className="question-progress">
+                  <span>
+                    Вопрос {questionIndex + 1} из {questions.length}
+                  </span>
+                  <span>+10 XP за правильный ответ</span>
+                </div>
+
+                <div className="progress-track">
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${
+                        ((questionIndex + 1) / questions.length) * 100
+                      }%`,
+                    }}
+                  />
+                </div>
+
+                <h2>{currentQuestion.question}</h2>
+
+                <div className="answer-list">
+                  {currentQuestion.options.map((option, index) => {
+                    let className = "answer-button";
+
+                    if (selectedAnswer === index) {
+                      className += " answer-selected";
+                    }
+
+                    if (checked && index === currentQuestion.answer) {
+                      className += " answer-correct";
+                    } else if (
+                      checked &&
+                      selectedAnswer === index &&
+                      index !== currentQuestion.answer
+                    ) {
+                      className += " answer-wrong";
+                    }
+
+                    return (
+                      <button
+                        key={`${questionIndex}-${index}`}
+                        className={className}
+                        onClick={() =>
+                          !checked && setSelectedAnswer(index)
+                        }
+                        disabled={checked}
+                      >
+                        <span className="answer-letter">
+                          {String.fromCharCode(65 + index)}
+                        </span>
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {checked && (
+                  <div className="explanation">
+                    <strong>
+                      {selectedAnswer === currentQuestion.answer
+                        ? "Отлично! +10 XP 🎉"
+                        : "Ничего страшного! Учимся на ошибках 💡"}
+                    </strong>
+                    <p>{currentQuestion.explanation}</p>
+                  </div>
+                )}
+
+                {hint && <div className="hint-box">{hint}</div>}
+
+                {!checked ? (
+                  <div className="game-actions">
+                    <button
+                      className="secondary-button"
+                      onClick={() =>
+                        setHint(
+                          `Подсказка: ${currentQuestion.explanation}`
+                        )
+                      }
+                    >
+                      💡 Подсказка
+                    </button>
+                    <button
+                      className="primary-button"
+                      onClick={checkAnswer}
+                      disabled={selectedAnswer === null}
+                    >
+                      Проверить ответ
+                    </button>
+                  </div>
+                ) : (
+                  <button className="primary-button" onClick={nextQuestion}>
+                    {questionIndex < questions.length - 1
+                      ? "Следующий вопрос →"
+                      : "Завершить миссию →"}
+                  </button>
+                )}
+              </>
+            )}
+          </section>
+        )}
+
+        {screen === "chat" && (
+          <section className="panel chat-panel">
+            <span className="eyebrow">ТВОЙ ИИ-РЕПЕТИТОР</span>
+            <h1>Разберёмся вместе 💬</h1>
+            <p>Спрашивай, проси примеры или объяснение попроще.</p>
+
+            <div className="chat-messages">
+              {chatMessages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`chat-bubble ${
+                    message.role === "user" ? "user-bubble" : "ai-bubble"
+                  }`}
+                >
+                  <strong>
+                    {message.role === "user" ? "Ты" : "SkillPath AI"}
+                  </strong>
+                  <p>{message.content}</p>
                 </div>
               ))}
-
-              {isSending && (
-                <div className="chat-line">
-                  ИИ-напарник думает... ✨
-                </div>
-              )}
+              {loading && <p className="loading-text">ИИ думает… ✨</p>}
             </div>
 
             <form
               className="chat-form"
-              onSubmit={(event) => {
-                event.preventDefault();
+              onSubmit={(e) => {
+                e.preventDefault();
                 void sendMessage();
               }}
             >
-              <input
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                placeholder="Напиши сообщение..."
-                disabled={isSending}
+              <textarea
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Напиши свой вопрос..."
+                rows={2}
               />
-
               <button
+                className="primary-button"
                 type="submit"
-                aria-label="Отправить сообщение"
-                disabled={isSending || !message.trim()}
+                disabled={!chatInput.trim() || loading}
               >
-                ↑
+                Отправить ↑
               </button>
             </form>
           </section>
-        </>
-      )}
+        )}
 
-      <section className="features">
-        <div className="section-kicker">НЕ ПРОСТО УРОКИ</div>
+        {screen === "profile" && (
+          <section className="panel profile-panel">
+            <span className="eyebrow">ТВОЙ ПРОГРЕСС</span>
+            <h1>Ты уже на пути 🚀</h1>
+            <p>Каждая пройденная тема приближает тебя к цели.</p>
 
-        <h2>Учёба, которая подстраивается под тебя.</h2>
+            <div className="stats-grid">
+              <div className="stat-card">
+                <span>⚡</span>
+                <strong>{xp}</strong>
+                <small>Всего XP</small>
+              </div>
+              <div className="stat-card">
+                <span>🎯</span>
+                <strong>{completedLessons}</strong>
+                <small>Миссий пройдено</small>
+              </div>
+              <div className="stat-card">
+                <span>🌱</span>
+                <strong>{Math.floor(xp / 100) + 1}</strong>
+                <small>Уровень</small>
+              </div>
+            </div>
 
-        <div className="feature-grid">
-          <article className="feature">
-            <span>🧠</span>
-            <h3>Объясняет понятно</h3>
-            <p>Сложные вещи — простым языком и с примерами.</p>
-          </article>
+            <div className="goal-card">
+              <strong>Твоя цель</strong>
+              <p>{goal || "Пока не выбрана"}</p>
+              <span>Направление: {track}</span>
+            </div>
 
-          <article className="feature">
-            <span>🎮</span>
-            <h3>Превращает в игру</h3>
-            <p>Маленькие задания, достижения и ощущение прогресса.</p>
-          </article>
+            <button
+              className="primary-button"
+              onClick={() => setScreen(lesson ? "lesson" : "home")}
+            >
+              Продолжить обучение →
+            </button>
+          </section>
+        )}
 
-          <article className="feature">
-            <span>👨‍👩‍👧</span>
-            <h3>Помогает родителям</h3>
-            <p>Планы занятий и помощь в объяснении сложных тем детям.</p>
-          </article>
-        </div>
-      </section>
+        {error && (
+          <div className="error-message" role="alert">
+            {error}
+            <button onClick={() => setError("")} aria-label="Закрыть">
+              ×
+            </button>
+          </div>
+        )}
+      </main>
 
-      <footer className="footer">
-        <span className="brand-icon">✦</span> SkillPath AI
-        <p>Твой следующий уровень начинается с одного шага.</p>
-      </footer>
-    </main>
+      <nav className="bottom-nav">
+        {(
+          [
+            ["home", "⌂", "Главная"],
+            ["lesson", "▤", "Урок"],
+            ["game", "✦", "Игра"],
+            ["chat", "◌", "ИИ-чат"],
+            ["profile", "♙", "Профиль"],
+          ] as [Screen, string, string][]
+        ).map(([id, symbol, label]) => (
+          <button
+            key={id}
+            className={`nav-item ${screen === id ? "nav-active" : ""}`}
+            onClick={() => {
+              if (id === "lesson" && !lesson) {
+                setScreen("home");
+              } else if (id === "game" && !lesson) {
+                setScreen("home");
+                setError("Сначала создай маршрут и пройди первый урок.");
+              } else {
+                setScreen(id);
+              }
+            }}
+          >
+            <span>{symbol}</span>
+            <small>{label}</small>
+          </button>
+        ))}
+      </nav>
+    </div>
   );
 }
-
-export default App;
