@@ -16,6 +16,11 @@ type LearningPlan = {
   lessons: Lesson[];
 };
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 const defaultLessons: Lesson[] = [
   {
     title: "Разведка",
@@ -76,11 +81,14 @@ function App() {
   const [xp, setXp] = useState(0);
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState<string[]>([]);
+  const [history, setHistory] = useState<ChatMessage[]>([]);
+  const [isSending, setIsSending] = useState(false);
   const [showExamples, setShowExamples] = useState(true);
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem("skillpath-progress");
+
       if (saved) {
         const data = JSON.parse(saved);
         setXp(data.xp ?? 0);
@@ -93,8 +101,14 @@ function App() {
     }
 
     const telegram = window as Window & {
-      Telegram?: { WebApp?: { ready?: () => void; expand?: () => void } };
+      Telegram?: {
+        WebApp?: {
+          ready?: () => void;
+          expand?: () => void;
+        };
+      };
     };
+
     telegram.Telegram?.WebApp?.ready?.();
     telegram.Telegram?.WebApp?.expand?.();
   }, []);
@@ -113,9 +127,10 @@ function App() {
     setGoal(cleanGoal);
     setPlan(makePlan(cleanGoal));
     setActiveLesson(0);
+    setHistory([]);
     setChat([
       `Моя цель: ${cleanGoal}`,
-      "План создан! Пока это демонстрационный маршрут. Следующим этапом подключим ИИ, который будет адаптировать уроки под твои ответы.",
+      "Привет! Я твой AI-напарник SkillPath. Напиши, что хочешь узнать или с чем нужна помощь. Я объясню всё простыми шагами.",
     ]);
     setShowExamples(false);
   }
@@ -132,19 +147,76 @@ function App() {
     }
   }
 
-  function sendMessage() {
+  async function sendMessage() {
     const clean = message.trim();
-    if (!clean) return;
 
-    setChat((current) => [
-      ...current,
-      `Ты: ${clean}`,
-      "ИИ-репетитор: я получил твой ответ. Для полноценного разбора, проверки ошибок и персональных объяснений нужно подключить наш сервер нейросети. Пока здесь работает демонстрационный режим.",
-    ]);
+    if (!clean || isSending) return;
+
+    const nextHistory: ChatMessage[] = [
+      ...history,
+      { role: "user", content: clean },
+    ];
+
     setMessage("");
+    setIsSending(true);
+    setChat((current) => [...current, `Ты: ${clean}`]);
+    setHistory(nextHistory);
+
+    try {
+      const response = await fetch("/.netlify/functions/ai", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: nextHistory,
+          goal: goal,
+          mode: mode,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.error === "string"
+            ? data.error
+            : `Ошибка сервера: ${response.status}`,
+        );
+      }
+
+      if (typeof data.reply !== "string" || !data.reply.trim()) {
+        throw new Error("ИИ вернул пустой ответ. Попробуй ещё раз.");
+      }
+
+      const reply = data.reply.trim();
+
+      setHistory([
+        ...nextHistory,
+        { role: "assistant", content: reply },
+      ]);
+
+      setChat((current) => [
+        ...current,
+        `ИИ-напарник: ${reply}`,
+      ]);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Неизвестная ошибка подключения";
+
+      setChat((current) => [
+        ...current,
+        `Не удалось получить ответ: ${errorMessage}. Проверь подключение и попробуй ещё раз.`,
+      ]);
+    } finally {
+      setIsSending(false);
+    }
   }
 
   const level = Math.floor(xp / 100) + 1;
+
   const progress = plan
     ? Math.round((completed.length / plan.lessons.length) * 100)
     : 0;
@@ -159,6 +231,7 @@ function App() {
             <small>AI LEARNING COMPANION</small>
           </span>
         </button>
+
         <div className="level-pill">
           <span>⚡</span> {xp} XP
         </div>
@@ -169,11 +242,13 @@ function App() {
           <span className="live-dot" />
           ТВОЙ ПУТЬ НАЧИНАЕТСЯ ЗДЕСЬ
         </div>
+
         <h1>
           Учись чему угодно.
           <br />
           <span>Становись кем угодно.</span>
         </h1>
+
         <p className="hero-text">
           Твоя цель — твои правила. От школьных предметов до новых навыков
           и больших мечтаний.
@@ -186,6 +261,7 @@ function App() {
           >
             🚀 Я хочу учиться
           </button>
+
           <button
             className={mode === "parent" ? "mode active" : "mode"}
             onClick={() => setMode("parent")}
@@ -198,11 +274,13 @@ function App() {
       {!plan ? (
         <section className="goal-card">
           <div className="section-kicker">01 / ТВОЯ МИССИЯ</div>
+
           <h2>
             {mode === "parent"
               ? "Чему нужно научиться вашему ребёнку?"
               : "Что ты хочешь освоить?"}
           </h2>
+
           <p className="muted">
             Не нужно выбирать из готового списка. Просто напиши свою цель.
           </p>
@@ -224,6 +302,7 @@ function App() {
               }
               rows={3}
             />
+
             <button className="primary-button" type="submit">
               Создать мой путь <span>↗</span>
             </button>
@@ -232,6 +311,7 @@ function App() {
           {showExamples && (
             <div className="examples">
               <span className="muted small">ИЛИ ПОПРОБУЙ:</span>
+
               <div className="example-list">
                 {examples.map((example) => (
                   <button
@@ -261,25 +341,34 @@ function App() {
             <button className="back-button" onClick={() => setPlan(null)}>
               ← Изменить цель
             </button>
+
             <div className="section-kicker">ТВОЙ УЧЕБНЫЙ МАРШРУТ</div>
+
             <h2>{plan.goal}</h2>
+
             <div className="plan-meta">
               <span>🌱 {plan.level}</span>
               <span>🎯 {plan.lessons.length} этапа</span>
               <span>⚡ Уровень {level}</span>
             </div>
+
             <div className="progress-heading">
               <span>Прогресс миссии</span>
               <strong>{progress}%</strong>
             </div>
+
             <div className="progress-track">
-              <div className="progress-fill" style={{ width: `${progress}%` }} />
+              <div
+                className="progress-fill"
+                style={{ width: `${progress}%` }}
+              />
             </div>
 
             <div className="lesson-list">
               {plan.lessons.map((lesson, index) => {
                 const isDone = completed.includes(index);
                 const isActive = activeLesson === index;
+
                 return (
                   <button
                     className={`lesson-item ${isActive ? "selected" : ""} ${
@@ -291,10 +380,12 @@ function App() {
                     <span className="lesson-number">
                       {isDone ? "✓" : `0${index + 1}`}
                     </span>
+
                     <span className="lesson-copy">
                       <strong>{lesson.title}</strong>
                       <small>{lesson.description}</small>
                     </span>
+
                     <span className="lesson-xp">+{lesson.reward} XP</span>
                   </button>
                 );
@@ -310,12 +401,16 @@ function App() {
                 +{plan.lessons[activeLesson].reward} XP
               </span>
             </div>
+
             <h2>{plan.lessons[activeLesson].title}</h2>
+
             <p>{plan.lessons[activeLesson].description}</p>
+
             <div className="task-box">
               <span>ТВОЁ ЗАДАНИЕ</span>
               <p>{plan.lessons[activeLesson].task}</p>
             </div>
+
             <button
               className="primary-button"
               onClick={finishLesson}
@@ -326,10 +421,10 @@ function App() {
                 : "Завершить этап"}
               <span>↗</span>
             </button>
+
             {progress === 100 && (
               <p className="success-message">
-                🎉 Все этапы демонстрационного маршрута пройдены! Теперь можно
-                создать новую цель.
+                🎉 Все этапы пройдены! Теперь можно создать новую цель.
               </p>
             )}
           </section>
@@ -342,26 +437,40 @@ function App() {
                 <p>Задай вопрос или расскажи о трудностях</p>
               </div>
             </div>
-            <div className="chat-messages">
+
+            <div className="chat-messages" aria-live="polite">
               {chat.map((item, index) => (
                 <div className="chat-line" key={`${index}-${item}`}>
                   {item}
                 </div>
               ))}
+
+              {isSending && (
+                <div className="chat-line">
+                  ИИ-напарник думает... ✨
+                </div>
+              )}
             </div>
+
             <form
               className="chat-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                sendMessage();
+                void sendMessage();
               }}
             >
               <input
                 value={message}
                 onChange={(event) => setMessage(event.target.value)}
                 placeholder="Напиши сообщение..."
+                disabled={isSending}
               />
-              <button type="submit" aria-label="Отправить сообщение">
+
+              <button
+                type="submit"
+                aria-label="Отправить сообщение"
+                disabled={isSending || !message.trim()}
+              >
                 ↑
               </button>
             </form>
@@ -371,18 +480,22 @@ function App() {
 
       <section className="features">
         <div className="section-kicker">НЕ ПРОСТО УРОКИ</div>
+
         <h2>Учёба, которая подстраивается под тебя.</h2>
+
         <div className="feature-grid">
           <article className="feature">
             <span>🧠</span>
             <h3>Объясняет понятно</h3>
             <p>Сложные вещи — простым языком и с примерами.</p>
           </article>
+
           <article className="feature">
             <span>🎮</span>
             <h3>Превращает в игру</h3>
             <p>Маленькие задания, достижения и ощущение прогресса.</p>
           </article>
+
           <article className="feature">
             <span>👨‍👩‍👧</span>
             <h3>Помогает родителям</h3>
