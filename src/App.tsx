@@ -37,13 +37,6 @@ type SavedState = {
 
 const STORAGE_KEY = "skillpath-ai-v2";
 
-const fallbackCourse: Omit<CourseLesson, "id" | "completed">[] = [
-  { title: "Знакомство с основами", objective: "Понять базовые понятия и научиться применять их на простых примерах." },
-  { title: "Первые практические навыки", objective: "Применить изученное самостоятельно." },
-  { title: "Учимся решать задачи", objective: "Разобрать задачу на небольшие шаги." },
-  { title: "Практическая миссия", objective: "Закрепить знания на практике." },
-  { title: "Проверка знаний", objective: "Проверить, что уже получается, и определить следующие шаги." },
-];
 
 const starterQuestions: Question[] = [
   {
