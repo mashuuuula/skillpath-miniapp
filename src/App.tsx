@@ -112,13 +112,7 @@ async function askAI(
   return data.reply.trim();
 }
 
-function makeFallbackCourse(): CourseLesson[] {
-  return fallbackCourse.map((lesson, index) => ({
-    ...lesson,
-    id: index + 1,
-    completed: false,
-  }));
-}
+
 
 export default function App() {
   const [saved] = useState<Partial<SavedState>>(readSavedState);
